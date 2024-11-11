@@ -40,6 +40,9 @@
          "buildTarget": {
              "visibility": "hidden"
          }
+},
+"files.associations": {
+    "stdlib.h": "c"
 }
 
      
