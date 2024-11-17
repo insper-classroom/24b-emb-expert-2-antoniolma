@@ -9,6 +9,8 @@
 
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
+// #include "ili9341.h"
+// #include "gfx.h"
 
 // For the BME280
 const int SPI0_SCK = 18;
@@ -21,25 +23,27 @@ const int SPI0_CSn = 17;
 
 #define READ_BIT 0x80
 
-int32_t t_fine;
+typedef struct {
+    int32_t t_fine;
 
-uint16_t dig_T1;
-int16_t dig_T2, dig_T3;
-uint16_t dig_P1;
-int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
-uint8_t dig_H1, dig_H3;
-int8_t dig_H6;
-int16_t dig_H2, dig_H4, dig_H5;
+    uint16_t dig_T1;
+    int16_t dig_T2, dig_T3;
+    uint16_t dig_P1;
+    int16_t dig_P2, dig_P3, dig_P4, dig_P5, dig_P6, dig_P7, dig_P8, dig_P9;
+    uint8_t dig_H1, dig_H3;
+    int8_t dig_H6;
+    int16_t dig_H2, dig_H4, dig_H5;
+} bme_data;
 
-uint32_t compensate_pressure(int32_t adc_P) {
+uint32_t compensate_pressure(int32_t adc_P, bme_data *data) {
     int32_t var1, var2;
     uint32_t p;
-    var1 = (((int32_t) t_fine) >> 1) - (int32_t) 64000;
-    var2 = (((var1 >> 2) * (var1 >> 2)) >> 11 ) * ((int32_t) dig_P6);
-    var2 = var2 + ((var1 * ((int32_t) dig_P5)) << 1);
-    var2 = (var2 >> 2) + (((int32_t) dig_P4) << 16);
-    var1 = (((dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13 )) >> 3) + ((((int32_t) dig_P2) * var1) >> 1)) >> 18;
-    var1 = ((((32768 + var1)) * ((int32_t) dig_P1)) >> 15);
+    var1 = (((int32_t) data->t_fine) >> 1) - (int32_t) 64000;
+    var2 = (((var1 >> 2) * (var1 >> 2)) >> 11 ) * ((int32_t) data->dig_P6);
+    var2 = var2 + ((var1 * ((int32_t) data->dig_P5)) << 1);
+    var2 = (var2 >> 2) + (((int32_t) data->dig_P4) << 16);
+    var1 = (((data->dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13 )) >> 3) + ((((int32_t) data->dig_P2) * var1) >> 1)) >> 18;
+    var1 = ((((32768 + var1)) * ((int32_t) data->dig_P1)) >> 15);
     if (var1 == 0)
         return 0;
     p = (((uint32_t)(((int32_t)1048576) - adc_P) - (var2 >> 12))) * 3125;
@@ -47,20 +51,20 @@ uint32_t compensate_pressure(int32_t adc_P) {
         p = (p << 1) / ((uint32_t) var1);
     else
         p = (p / (uint32_t) var1) * 2;
-    var1 = (((int32_t) dig_P9) * ((int32_t)(((p >> 3) * (p >> 3)) >> 13 ))) >> 12;
-    var2 = (((int32_t)(p >> 2)) * ((int32_t) dig_P8)) >> 13;
-    p = (uint32_t)((int32_t) p + ((var1 + var2 + dig_P7) >> 4));
+    var1 = (((int32_t) data->dig_P9) * ((int32_t)(((p >> 3) * (p >> 3)) >> 13 ))) >> 12;
+    var2 = (((int32_t)(p >> 2)) * ((int32_t) data->dig_P8)) >> 13;
+    p = (uint32_t)((int32_t) p + ((var1 + var2 + data->dig_P7) >> 4));
     return p;
 }
 
-int32_t compensate_temperature(int32_t adc_T) {
+int32_t compensate_temperature(int32_t adc_T, bme_data *data) {
     int32_t var1, var2, T;
-    var1 = ((((adc_T >> 3) - ((int32_t) dig_T1 << 1))) * ((int32_t) dig_T2)) >> 11;
-    var2 = (((((adc_T >> 4) - ((int32_t) dig_T1)) *
-              ((adc_T >> 4) - ((int32_t) dig_T1))) >> 12) *
-            ((int32_t) dig_T3)) >> 14;
-    t_fine = var1 + var2;
-    T = (t_fine * 5 + 128) >> 8;
+    var1 = ((((adc_T >> 3) - ((int32_t) data->dig_T1 << 1))) * ((int32_t) data->dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((int32_t) data->dig_T1)) *
+              ((adc_T >> 4) - ((int32_t) data->dig_T1))) >> 12) *
+            ((int32_t) data->dig_T3)) >> 14;
+    data->t_fine = var1 + var2;
+    T = (data->t_fine * 5 + 128) >> 8;
     return T;
 }
 
@@ -96,34 +100,34 @@ static void read_registers(uint8_t reg, uint8_t *buf, uint16_t len) {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-void read_compensation_parameters() {
+void read_compensation_parameters(bme_data *data) {
     uint8_t buffer[26];
 
     read_registers(0x88, buffer, 26);
 
-    dig_T1 = buffer[0] | (buffer[1] << 8);
-    dig_T2 = buffer[2] | (buffer[3] << 8);
-    dig_T3 = buffer[4] | (buffer[5] << 8);
+    data->dig_T1 = buffer[0] | (buffer[1] << 8);
+    data->dig_T2 = buffer[2] | (buffer[3] << 8);
+    data->dig_T3 = buffer[4] | (buffer[5] << 8);
 
-    dig_P1 = buffer[6] | (buffer[7] << 8);
-    dig_P2 = buffer[8] | (buffer[9] << 8);
-    dig_P3 = buffer[10] | (buffer[11] << 8);
-    dig_P4 = buffer[12] | (buffer[13] << 8);
-    dig_P5 = buffer[14] | (buffer[15] << 8);
-    dig_P6 = buffer[16] | (buffer[17] << 8);
-    dig_P7 = buffer[18] | (buffer[19] << 8);
-    dig_P8 = buffer[20] | (buffer[21] << 8);
-    dig_P9 = buffer[22] | (buffer[23] << 8);
+    data->dig_P1 = buffer[6] | (buffer[7] << 8);
+    data->dig_P2 = buffer[8] | (buffer[9] << 8);
+    data->dig_P3 = buffer[10] | (buffer[11] << 8);
+    data->dig_P4 = buffer[12] | (buffer[13] << 8);
+    data->dig_P5 = buffer[14] | (buffer[15] << 8);
+    data->dig_P6 = buffer[16] | (buffer[17] << 8);
+    data->dig_P7 = buffer[18] | (buffer[19] << 8);
+    data->dig_P8 = buffer[20] | (buffer[21] << 8);
+    data->dig_P9 = buffer[22] | (buffer[23] << 8);
 
-    dig_H1 = buffer[25]; // 0xA1
+    data->dig_H1 = buffer[25]; // 0xA1
 
     read_registers(0xE1, buffer, 8);
 
-    dig_H2 = buffer[0] | (buffer[1] << 8); // 0xE1 | 0xE2
-    dig_H3 = buffer[2]; // 0xE3
-    dig_H4 = (buffer[3] << 4) | (buffer[4] & 0x0F); // 0xE4 | 0xE5[3:0]
-    dig_H5 = (buffer[5] << 4) | (buffer[4] >> 4); // 0xE5[7:4] | 0xE6
-    dig_H6 = buffer[6]; // 0xE7
+    data->dig_H2 = buffer[0] | (buffer[1] << 8); // 0xE1 | 0xE2
+    data->dig_H3 = buffer[2]; // 0xE3
+    data->dig_H4 = (buffer[3] << 4) | (buffer[4] & 0x0F); // 0xE4 | 0xE5[3:0]
+    data->dig_H5 = (buffer[5] << 4) | (buffer[4] >> 4); // 0xE5[7:4] | 0xE6
+    data->dig_H6 = buffer[6]; // 0xE7
 }
 
 static void bme280_read_raw(int32_t *pressure, int32_t *temperature) {
@@ -159,6 +163,8 @@ void bme_init() {
 // Baseado no exemplo: https://github.com/raspberrypi/pico-examples/tree/master/spi/bme280_spi
 void bme_task(void *p) {
     bme_init();
+
+    bme_data data;
     
     // Read the chip ID to verify communication
     uint8_t id;
@@ -166,7 +172,7 @@ void bme_task(void *p) {
     printf("Chip ID is 0x%x\n", id);
 
     // Read calibration parameters
-    read_compensation_parameters();
+    read_compensation_parameters(&data);
 
     // Configure the sensor
     write_register(0xF2, 0x01);
@@ -177,14 +183,31 @@ void bme_task(void *p) {
     while (1) {
         bme280_read_raw(&pressure, &temperature);
 
-        temperature = compensate_temperature(temperature);
-        pressure = compensate_pressure(pressure);
+        temperature = compensate_temperature(temperature, &data);
+        pressure = compensate_pressure(pressure, &data);
         // printf("a\n");
         printf("Pressure = %d Pa\n", pressure);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
+
+// void display_task(void *p) {
+
+//     LCD_initDisplay();
+//     LCD_setRotation(1);
+//     GFX_createFramebuf();
+//     while (true)
+//     {
+//         GFX_clearScreen();
+//         GFX_setCursor(0, 0);
+//         GFX_printf("Hello GFX!\n%d", c++);
+//         GFX_flush();
+//         sleep_ms(500);
+//     }
+// }
+
+// ======================================================== Taks ==========================================================
 
 int main() {
     stdio_init_all();

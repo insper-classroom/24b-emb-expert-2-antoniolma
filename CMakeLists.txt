@@ -31,4 +31,5 @@ endif()
 
 # Codes subdir:
 add_subdirectory(freertos)
+# add_subdirectory(ili9341)
 add_subdirectory(main)

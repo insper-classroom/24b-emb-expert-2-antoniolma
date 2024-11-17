@@ -12,7 +12,7 @@ int16_t _ystart = 0; ///< Internal framebuffer Y offset
 
 uint8_t rotation;
 
-spi_inst_t *ili9341_spi = spi_default;
+spi_inst_t *ili9341_spi = spi1;
 
 uint16_t ili9341_pinCS = PICO_DEFAULT_SPI_CSN_PIN;
 uint16_t ili9341_pinDC = 20;
