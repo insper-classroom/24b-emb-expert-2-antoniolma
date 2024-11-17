@@ -1,8 +1,5 @@
-/**
- * Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
- *
- * SPDX-License-Identifier: BSD-3-Clause
- */
+#include <FreeRTOS.h>
+#include <task.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -13,12 +10,14 @@
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
 
-// Para o BME280
-const int SPI1_SCK = 10;
-const int SPI1_TX = 11;
-const int SPI1_RX = 12;
-const int SPI1_CSn = 13;
+// For the BME280
+const int SPI0_SCK = 18;
+const int SPI0_TX = 19;
+const int SPI0_RX = 16;
+const int SPI0_CSn = 17;
 
+
+// ======================================================== BME280 ========================================================
 
 #define READ_BIT 0x80
 
@@ -32,65 +31,69 @@ uint8_t dig_H1, dig_H3;
 int8_t dig_H6;
 int16_t dig_H2, dig_H4, dig_H5;
 
-// Retirado do exemplo: https://github.com/raspberrypi/pico-examples/blob/master/spi/bme280_spi/bme280_spi.c
 uint32_t compensate_pressure(int32_t adc_P) {
     int32_t var1, var2;
     uint32_t p;
     var1 = (((int32_t) t_fine) >> 1) - (int32_t) 64000;
-    var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t) dig_P6);
+    var2 = (((var1 >> 2) * (var1 >> 2)) >> 11 ) * ((int32_t) dig_P6);
     var2 = var2 + ((var1 * ((int32_t) dig_P5)) << 1);
     var2 = (var2 >> 2) + (((int32_t) dig_P4) << 16);
-    var1 = (((dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13)) >> 3) + ((((int32_t) dig_P2) * var1) >> 1)) >> 18;
+    var1 = (((dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13 )) >> 3) + ((((int32_t) dig_P2) * var1) >> 1)) >> 18;
     var1 = ((((32768 + var1)) * ((int32_t) dig_P1)) >> 15);
     if (var1 == 0)
         return 0;
-
-    p = (((uint32_t) (((int32_t) 1048576) - adc_P) - (var2 >> 12))) * 3125;
+    p = (((uint32_t)(((int32_t)1048576) - adc_P) - (var2 >> 12))) * 3125;
     if (p < 0x80000000)
         p = (p << 1) / ((uint32_t) var1);
     else
         p = (p / (uint32_t) var1) * 2;
-
-    var1 = (((int32_t) dig_P9) * ((int32_t) (((p >> 3) * (p >> 3)) >> 13))) >> 12;
-    var2 = (((int32_t) (p >> 2)) * ((int32_t) dig_P8)) >> 13;
-    p = (uint32_t) ((int32_t) p + ((var1 + var2 + dig_P7) >> 4));
-
+    var1 = (((int32_t) dig_P9) * ((int32_t)(((p >> 3) * (p >> 3)) >> 13 ))) >> 12;
+    var2 = (((int32_t)(p >> 2)) * ((int32_t) dig_P8)) >> 13;
+    p = (uint32_t)((int32_t) p + ((var1 + var2 + dig_P7) >> 4));
     return p;
+}
+
+int32_t compensate_temperature(int32_t adc_T) {
+    int32_t var1, var2, T;
+    var1 = ((((adc_T >> 3) - ((int32_t) dig_T1 << 1))) * ((int32_t) dig_T2)) >> 11;
+    var2 = (((((adc_T >> 4) - ((int32_t) dig_T1)) *
+              ((adc_T >> 4) - ((int32_t) dig_T1))) >> 12) *
+            ((int32_t) dig_T3)) >> 14;
+    t_fine = var1 + var2;
+    T = (t_fine * 5 + 128) >> 8;
+    return T;
 }
 
 static inline void cs_select() {
     asm volatile("nop \n nop \n nop");
-    gpio_put(SPI1_CSn, 0);  // Active low
+    gpio_put(SPI0_CSn, 0);
     asm volatile("nop \n nop \n nop");
 }
 
 static inline void cs_deselect() {
     asm volatile("nop \n nop \n nop");
-    gpio_put(SPI1_CSn, 1);
+    gpio_put(SPI0_CSn, 1);
     asm volatile("nop \n nop \n nop");
 }
 
 static void write_register(uint8_t reg, uint8_t data) {
     uint8_t buf[2];
-    buf[0] = reg & 0x7f;  // remove read bit as this is a write
+    buf[0] = reg & 0x7F;  // Ensure the write bit is 0
     buf[1] = data;
     cs_select();
-    spi_write_blocking(spi1, buf, 2);
+    spi_write_blocking(spi0, buf, 2);
     cs_deselect();
-    sleep_ms(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 static void read_registers(uint8_t reg, uint8_t *buf, uint16_t len) {
-    // For this particular device, we send the device the register we want to read
-    // first, then subsequently read from the device. The register is auto incrementing
-    // so we don't need to keep sending the register we want, just the first.
-    reg |= READ_BIT;
+    reg |= READ_BIT;  // Set the read bit
     cs_select();
-    spi_write_blocking(spi1, &reg, 1);
-    sleep_ms(10);
-    spi_read_blocking(spi1, 0, buf, len);
+    spi_write_blocking(spi0, &reg, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    spi_read_blocking(spi0, 0, buf, len);
     cs_deselect();
-    sleep_ms(10);
+    vTaskDelay(pdMS_TO_TICKS(10));
 }
 
 void read_compensation_parameters() {
@@ -117,61 +120,77 @@ void read_compensation_parameters() {
     read_registers(0xE1, buffer, 8);
 
     dig_H2 = buffer[0] | (buffer[1] << 8); // 0xE1 | 0xE2
-    dig_H3 = (int8_t) buffer[2]; // 0xE3
-    dig_H4 = buffer[3] << 4 | (buffer[4] & 0xf); // 0xE4 | 0xE5[3:0]
-    dig_H5 = (buffer[4] >> 4) | (buffer[5] << 4); // 0xE5[7:4] | 0xE6
-    dig_H6 = (int8_t) buffer[6]; // 0xE7
+    dig_H3 = buffer[2]; // 0xE3
+    dig_H4 = (buffer[3] << 4) | (buffer[4] & 0x0F); // 0xE4 | 0xE5[3:0]
+    dig_H5 = (buffer[5] << 4) | (buffer[4] >> 4); // 0xE5[7:4] | 0xE6
+    dig_H6 = buffer[6]; // 0xE7
 }
 
-static void bme280_read_raw(int32_t *pressure) {
+static void bme280_read_raw(int32_t *pressure, int32_t *temperature) {
     uint8_t buffer[8];
 
     read_registers(0xF7, buffer, 8);
     *pressure = ((uint32_t) buffer[0] << 12) | ((uint32_t) buffer[1] << 4) | (buffer[2] >> 4);
-    // *temperature = ((uint32_t) buffer[3] << 12) | ((uint32_t) buffer[4] << 4) | (buffer[5] >> 4);
-    // *humidity = (uint32_t) buffer[6] << 8 | buffer[7];
+    *temperature = ((uint32_t) buffer[3] << 12) | ((uint32_t) buffer[4] << 4) | (buffer[5] >> 4);
+    // *humidity = ((uint32_t) buffer[6] << 8) | buffer[7];
 }
 
+void bme_init() {
+    printf("Hello, BME280! Reading raw data from registers via SPI...\n");
 
-int main() {
-    printf("Hello, bme280! Reading raw data from registers via SPI...\n");
+    // Initialize SPI0 at 0.5 MHz
+    spi_init(spi0, 500 * 1000);
+    gpio_set_function(SPI0_RX, GPIO_FUNC_SPI);
+    gpio_set_function(SPI0_SCK, GPIO_FUNC_SPI);
+    gpio_set_function(SPI0_TX, GPIO_FUNC_SPI);
 
-    // This example will use SPI0 at 0.5MHz.
-    spi_init(spi1, 500 * 1000);
-    gpio_set_function(SPI1_RX, GPIO_FUNC_SPI);
-    gpio_set_function(SPI1_SCK, GPIO_FUNC_SPI);
-    gpio_set_function(SPI1_TX, GPIO_FUNC_SPI);
-    // Make the SPI pins available to picotool
-    bi_decl(bi_3pins_with_func(SPI1_RX, SPI1_TX, SPI1_SCK, GPIO_FUNC_SPI));
+    // Initialize CS pin
+    gpio_init(SPI0_CSn);
+    gpio_set_dir(SPI0_CSn, GPIO_OUT);
+    gpio_put(SPI0_CSn, 1);
+}
 
-    // Chip select is active-low, so we'll initialise it to a driven-high state
-    gpio_init(SPI1_CSn);
-    gpio_set_dir(SPI1_CSn, GPIO_OUT);
-    gpio_put(SPI1_CSn, 1);
-    // Make the CS pin available to picotool
-    bi_decl(bi_1pin_with_name(SPI1_CSn, "SPI CS"));
+// ========================================================= LCD ==========================================================
 
-    // See if SPI is working - interrograte the device for its I2C ID number, should be 0x60
+
+
+// ======================================================== Taks ==========================================================
+
+// Baseado no exemplo: https://github.com/raspberrypi/pico-examples/tree/master/spi/bme280_spi
+void bme_task(void *p) {
+    bme_init();
+    
+    // Read the chip ID to verify communication
     uint8_t id;
     read_registers(0xD0, &id, 1);
     printf("Chip ID is 0x%x\n", id);
 
+    // Read calibration parameters
     read_compensation_parameters();
 
-    write_register(0xF2, 0x1); // Humidity oversampling register - going for x1
-    write_register(0xF4, 0x27);// Set rest of oversampling modes and run mode to normal
+    // Configure the sensor
+    write_register(0xF2, 0x01);
+    write_register(0xF4, 0x27);
 
-    int32_t pressure;
+    int32_t pressure, temperature;
 
     while (1) {
-        bme280_read_raw(&pressure);
+        bme280_read_raw(&pressure, &temperature);
 
-        // These are the raw numbers from the chip, so we need to run through the
-        // compensations to get human understandable numbers
+        temperature = compensate_temperature(temperature);
         pressure = compensate_pressure(pressure);
+        // printf("a\n");
+        printf("Pressure = %d Pa\n", pressure);
 
-        printf("Pressure = %dPa\n", pressure);
-
-        sleep_ms(1000);
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+int main() {
+    stdio_init_all();
+    
+    xTaskCreate(bme_task, "BME_TASK 1", 256, NULL, 1, NULL);
+    vTaskStartScheduler();
+
+    while (1);
 }
