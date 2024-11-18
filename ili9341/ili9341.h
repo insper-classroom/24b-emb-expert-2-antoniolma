@@ -1,5 +1,6 @@
 #ifndef ILI9341_H
 #define ILI9341_H
+
 #include "pico/stdlib.h"
 #include "hardware/spi.h"
 
@@ -13,7 +14,6 @@
 #define MADCTL_RGB 0x00 ///< Red-Green-Blue pixel order
 #define MADCTL_BGR 0x08 ///< Blue-Green-Red pixel order
 #define MADCTL_MH 0x04  ///< LCD refresh right to left
-
 
 #define ILI9341_TFTWIDTH 240  ///< ILI9341 max TFT width
 #define ILI9341_TFTHEIGHT 320 ///< ILI9341 max TFT height
@@ -51,11 +51,9 @@
 #define ILI9341_VSCRSADD 0x37 ///< Vertical Scrolling Start Address
 #define ILI9341_PIXFMT 0x3A   ///< COLMOD: Pixel Format Set
 
-#define ILI9341_FRMCTR1                                                        \
-  0xB1 ///< Frame Rate Control (In Normal Mode/Full Colors)
+#define ILI9341_FRMCTR1 0xB1 ///< Frame Rate Control (In Normal Mode/Full Colors)
 #define ILI9341_FRMCTR2 0xB2 ///< Frame Rate Control (In Idle Mode/8 colors)
-#define ILI9341_FRMCTR3                                                        \
-  0xB3 ///< Frame Rate control (In Partial Mode/Full Colors)
+#define ILI9341_FRMCTR3 0xB3 ///< Frame Rate control (In Partial Mode/Full Colors)
 #define ILI9341_INVCTR 0xB4  ///< Display Inversion Control
 #define ILI9341_DFUNCTR 0xB6 ///< Display Function Control
 
@@ -76,15 +74,15 @@
 #define ILI9341_GMCTRN1 0xE1 ///< Negative Gamma Correction
 
 // Some ready-made 16-bit ('565') color settings:
-#define ILI9341_BLACK 0x0000
-#define ILI9341_WHITE 0xFFFF
-#define ILI9341_RED 0xF800
-#define ILI9341_GREEN 0x07E0
-#define ILI9341_BLUE 0x001F
-#define ILI9341_CYAN 0x07FF
+#define ILI9341_BLACK   0x0000
+#define ILI9341_WHITE   0xFFFF
+#define ILI9341_RED     0xF800
+#define ILI9341_GREEN   0x07E0
+#define ILI9341_BLUE    0x001F
+#define ILI9341_CYAN    0x07FF
 #define ILI9341_MAGENTA 0xF81F
-#define ILI9341_YELLOW 0xFFE0
-#define ILI9341_ORANGE 0xFC00
+#define ILI9341_YELLOW  0xFFE0
+#define ILI9341_ORANGE  0xFC00
 
 void LCD_setPins(uint16_t dc, uint16_t cs, int16_t rst, uint16_t sck, uint16_t tx);
 void LCD_setSPIperiph(spi_inst_t *s);
@@ -95,4 +93,4 @@ void LCD_setRotation(uint8_t m);
 void LCD_WritePixel(int x, int y, uint16_t col);
 void LCD_WriteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *bitmap);
 
-#endif
+#endif // ILI9341_H

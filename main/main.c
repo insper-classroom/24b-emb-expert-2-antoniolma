@@ -1,5 +1,6 @@
 #include <FreeRTOS.h>
 #include <task.h>
+#include <queue.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -9,15 +10,16 @@
 
 #include "hardware/gpio.h"
 #include "hardware/spi.h"
-// #include "ili9341.h"
-// #include "gfx.h"
+#include "ili9341.h"
+#include "gfx.h"
 
-// For the BME280
+// Configuracao dos PINs p/ BME280
 const int SPI0_SCK = 18;
 const int SPI0_TX = 19;
 const int SPI0_RX = 16;
 const int SPI0_CSn = 17;
 
+QueueHandle_t xQueueBME;
 
 // ======================================================== BME280 ========================================================
 
@@ -154,10 +156,6 @@ void bme_init() {
     gpio_put(SPI0_CSn, 1);
 }
 
-// ========================================================= LCD ==========================================================
-
-
-
 // ======================================================== Taks ==========================================================
 
 // Baseado no exemplo: https://github.com/raspberrypi/pico-examples/tree/master/spi/bme280_spi
@@ -185,34 +183,43 @@ void bme_task(void *p) {
 
         temperature = compensate_temperature(temperature, &data);
         pressure = compensate_pressure(pressure, &data);
-        // printf("a\n");
-        printf("Pressure = %d Pa\n", pressure);
+
+        // printf("Pressure = %d Pa\n", pressure);
+
+        xQueueSend(xQueueBME, &pressure, 0);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
-// void display_task(void *p) {
-
-//     LCD_initDisplay();
-//     LCD_setRotation(1);
-//     GFX_createFramebuf();
-//     while (true)
-//     {
-//         GFX_clearScreen();
-//         GFX_setCursor(0, 0);
-//         GFX_printf("Hello GFX!\n%d", c++);
-//         GFX_flush();
-//         sleep_ms(500);
-//     }
-// }
+// Baseado no exemplo: 
+void lcd_task(void *p) {
+    LCD_initDisplay();
+    LCD_setRotation(1);
+    GFX_createFramebuf();
+    int32_t press_data;
+    while (true)
+    {
+        if (xQueueReceive(xQueueBME, &press_data, pdMS_TO_TICKS(0))) {
+            printf("Pressure: %d Pa\n", press_data);
+            GFX_clearScreen();
+            GFX_setCursor(0, 0);
+            GFX_printf("Pressao: \n%d Pa", press_data);
+            GFX_flush();
+        }
+    }
+}
 
 // ======================================================== Taks ==========================================================
 
 int main() {
     stdio_init_all();
+    printf("Start RTOS \n");
     
+    xQueueBME = xQueueCreate(32, sizeof(uint32_t));
+
     xTaskCreate(bme_task, "BME_TASK 1", 256, NULL, 1, NULL);
+    xTaskCreate(lcd_task, "LCD_TASK 1", 256, NULL, 1, NULL);
     vTaskStartScheduler();
 
     while (1);

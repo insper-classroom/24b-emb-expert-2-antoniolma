@@ -42,7 +42,9 @@
          }
 },
 "files.associations": {
-    "stdlib.h": "c"
+    "stdlib.h": "c",
+    "gfx.h": "c",
+    "queue.h": "c"
 }
 
      
